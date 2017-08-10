@@ -2,129 +2,14 @@ use std::collections::HashMap;
 
 use std::io;
 use std::io::{Error, ErrorKind};
-use std::fmt;
 
+#[derive(Debug)]
 pub enum BencodeValue {
     Integer(i64),
     String(Vec<u8>),
     List(Vec<BencodeValue>),
     Dictionary(HashMap<Vec<u8>, BencodeValue>),
-    EndOfFile, // TODO is this needed?
-}
-
-enum BencodeValuePrintState<'a> {
-    Start,
-    List(&'a Vec<BencodeValue>, usize),
-    End,
-}
-
-impl fmt::Debug for BencodeValue {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write_bencode_value(self, f, 0)
-    }
-}
-
-fn write_bencode_value(val: &BencodeValue, f: &mut fmt::Formatter, indent: u8) -> fmt::Result {
-    /*    let mut state = BencodeValuePrintState::Start;
-    let mut current_value = val;
-
-    loop {
-        match state {
-            BencodeValuePrintState::Start => {
-                match *current_value {
-                    BencodeValue::Integer(ref val) => {
-                        print_integer(f, val)?;
-                        state = BencodeValuePrintState::End
-                    }
-                    BencodeValue::String(ref val) => {
-                        print_string(f, val)?;
-                        state = BencodeValuePrintState::End
-                    }
-                    BencodeValue::List(ref val) => {
-                        write!(f, "List(")?;
-                        state = BencodeValuePrintState::List(val, 0);
-                        val.iter();
-                    }
-                    _ => {
-                        panic!("TODO");
-                    }
-                }
-            }
-            BencodeValuePrintState::List(ref val, idx) => {
-                if let Some(in_val) = val.get(idx) {
-                    current_value = in_val;
-                } else {
-                    write!(f, ")")?;
-                    //TODO pop state
-                }
-            }
-            BencodeValuePrintState::End => {
-                return Ok(());
-            }
-        }
-    } */
-
-    for _ in 0..indent {
-        write!(f, "    ")?;
-    }
-    match *val {
-        BencodeValue::Integer(ref val) => print_integer(f, val),
-        BencodeValue::String(ref val) => print_string(f, val),
-        BencodeValue::List(ref val) => {
-            write!(f, "List(\n")?;
-            for elem in val {
-                write_bencode_value(elem, f, indent + 1)?;
-            }
-            write!(f, ")")
-        }
-        BencodeValue::Dictionary(ref val) => {
-            write!(f, "Dictionary(\n")?;
-            for (key, value) in val.iter() {
-                write!(f, "    ")?;
-                print_string(f, key)?;
-                write!(f, ":")?;
-                write_bencode_value(value, f, indent)?;
-                write!(f, "\n")?
-            }
-            write!(f, ")")
-        }
-        _ => write!(f, "TODO"),
-    }
-}
-
-/* impl fmt::Debug for BencodeValue {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            BencodeValue::Integer(ref val) => {
-	            write!(f, "Integer({:?})", val)
-            }
-            BencodeValue::String(ref val) => {
-	            write!(f, "String({:?})", String::from_utf8_lossy(val))
-            }
-            BencodeValue::List(ref val) => {
-            	write!(f, "List({:?})", val)
-            }
-            BencodeValue::Dictionary(ref val) => {
-            	write!(f, "Dictionary(\n")?;
-
-            	for (key, value) in val.iter() {
-            		write!(f, "\t{:?}:{:?}", key, value)?;
-            	}
-            	write!(f, "\n)")
-            }
-            BencodeValue::EndOfFile => {
-	            write!(f, "EOF")
-            }
-        }
-    }
-}*/
-
-fn print_integer(f: &mut fmt::Formatter, val: &i64) -> fmt::Result {
-    write!(f, "Integer({})", val)
-}
-
-fn print_string(f: &mut fmt::Formatter, val: &Vec<u8>) -> fmt::Result {
-    write!(f, "String({:?})", String::from_utf8_lossy(val))
+    EndOfFile,
 }
 
 pub fn parse_value(iter: &mut Iterator<Item = io::Result<u8>>) -> io::Result<BencodeValue> {
