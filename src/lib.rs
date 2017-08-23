@@ -201,18 +201,173 @@ fn parse_int(iter: &mut Iterator<Item = io::Result<u8>>) -> io::Result<i64> {
     return Ok(vec_to_int(&int_chars, is_negative)?);
 }
 
+/// Parses the number given as ASCII in vec.
 fn vec_to_int(vec: &Vec<u8>, is_negative: bool) -> io::Result<i64> {
     let mut ret: i64 = 0;
 
     // TODO checked math operations
     for val in vec {
-        ret *= 10;
-        ret += *val as i64 - 0x30;
+        if let Some(i) = ret.checked_mul(10) {
+            ret = i;
+        } else {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "Integer field is larger than i64",
+            ));
+        }
+        if let Some(i) = ret.checked_add(*val as i64 - 0x30) {
+            ret = i;
+        } else {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "Integer field is larger than i64",
+            ));
+        }
     }
 
     if is_negative {
-        ret *= -1;
+        ret *= -1; // Negative is +1 bigger than positive. Therefor this can't overflow
     }
 
     Ok(ret)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_vec_to_int() {
+        assert_eq!(
+            vec_to_int(&vec!['1' as u8, '2' as u8, '3' as u8], false).unwrap(),
+            123
+        );
+        assert_eq!(
+            vec_to_int(&vec!['1' as u8, '2' as u8, '3' as u8], true).unwrap(),
+            -123
+        );
+        assert_eq!(
+            vec_to_int(&vec!['0' as u8, '2' as u8, '3' as u8], false).unwrap(),
+            23
+        );
+        assert_eq!(
+            vec_to_int(&vec!['0' as u8, '0' as u8, '0' as u8], false).unwrap(),
+            0
+        );
+        assert_eq!(
+            vec_to_int(&vec!['0' as u8, '0' as u8, '0' as u8], true).unwrap(),
+            0
+        );
+        assert_eq!(
+            vec_to_int(&vec!['0' as u8, '0' as u8, '0' as u8], true).unwrap(),
+            0
+        );
+        assert_eq!(vec_to_int(&vec![], true).unwrap(), 0);
+        assert_eq!(
+            vec_to_int(
+                &vec![
+                    '9' as u8,
+                    '2' as u8,
+                    '2' as u8,
+                    '3' as u8,
+                    '3' as u8,
+                    '7' as u8,
+                    '2' as u8,
+                    '0' as u8,
+                    '3' as u8,
+                    '6' as u8,
+                    '8' as u8,
+                    '5' as u8,
+                    '4' as u8,
+                    '7' as u8,
+                    '7' as u8,
+                    '5' as u8,
+                    '8' as u8,
+                    '0' as u8,
+                    '7' as u8,
+                ],
+                false,
+            ).unwrap(),
+            9223372036854775807
+        );
+        assert!(
+            vec_to_int(
+                &vec![
+                    '9' as u8,
+                    '2' as u8,
+                    '2' as u8,
+                    '3' as u8,
+                    '3' as u8,
+                    '7' as u8,
+                    '2' as u8,
+                    '0' as u8,
+                    '3' as u8,
+                    '6' as u8,
+                    '8' as u8,
+                    '5' as u8,
+                    '4' as u8,
+                    '7' as u8,
+                    '7' as u8,
+                    '5' as u8,
+                    '8' as u8,
+                    '0' as u8,
+                    '8' as u8,
+                ],
+                false,
+            ).is_err()
+        );
+        assert_eq!(
+            vec_to_int(
+                &vec![
+                    '9' as u8,
+                    '2' as u8,
+                    '2' as u8,
+                    '3' as u8,
+                    '3' as u8,
+                    '7' as u8,
+                    '2' as u8,
+                    '0' as u8,
+                    '3' as u8,
+                    '6' as u8,
+                    '8' as u8,
+                    '5' as u8,
+                    '4' as u8,
+                    '7' as u8,
+                    '7' as u8,
+                    '5' as u8,
+                    '8' as u8,
+                    '0' as u8,
+                    '8' as u8,
+                ],
+                true,
+            ).unwrap(),
+            -9223372036854775808
+        );
+        assert!(
+            vec_to_int(
+                &vec![
+                    '9' as u8,
+                    '2' as u8,
+                    '2' as u8,
+                    '3' as u8,
+                    '3' as u8,
+                    '7' as u8,
+                    '2' as u8,
+                    '0' as u8,
+                    '3' as u8,
+                    '6' as u8,
+                    '8' as u8,
+                    '5' as u8,
+                    '4' as u8,
+                    '7' as u8,
+                    '7' as u8,
+                    '5' as u8,
+                    '8' as u8,
+                    '0' as u8,
+                    '9' as u8,
+                ],
+                true,
+            ).is_err()
+        );
+    }
 }
