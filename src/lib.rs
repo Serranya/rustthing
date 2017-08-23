@@ -201,11 +201,11 @@ fn parse_int(iter: &mut Iterator<Item = io::Result<u8>>) -> io::Result<i64> {
     return Ok(vec_to_int(&int_chars, is_negative)?);
 }
 
-/// Parses the number given as ASCII in vec.
+/// Parses the number given as ASCII in vec to an i64. Does not support
+/// a sign. The sign must be passed via the is_negative parameter.
 fn vec_to_int(vec: &Vec<u8>, is_negative: bool) -> io::Result<i64> {
     let mut ret: i64 = 0;
 
-    // TODO checked math operations
     for val in vec {
         if let Some(i) = ret.checked_mul(10) {
             ret = i;
@@ -237,32 +237,60 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_vec_to_int() {
+    fn test_vec_to_int_positive() {
         assert_eq!(
             vec_to_int(&vec!['1' as u8, '2' as u8, '3' as u8], false).unwrap(),
             123
         );
-        assert_eq!(
+    }
+
+    #[test]
+    fn test_vec_to_int_negative() {
+         assert_eq!(
             vec_to_int(&vec!['1' as u8, '2' as u8, '3' as u8], true).unwrap(),
             -123
         );
+    }
+
+    #[test]
+    fn test_vec_to_int_zero_prefix_positive() {
         assert_eq!(
             vec_to_int(&vec!['0' as u8, '2' as u8, '3' as u8], false).unwrap(),
             23
         );
+    }
+
+    #[test]
+    fn test_vec_to_int_zero_prefix_negative() {
+        assert_eq!(
+            vec_to_int(&vec!['0' as u8, '2' as u8, '3' as u8], true).unwrap(),
+            -23
+        );
+    }
+
+    #[test]
+    fn test_vec_to_int_zero_positive() {
         assert_eq!(
             vec_to_int(&vec!['0' as u8, '0' as u8, '0' as u8], false).unwrap(),
             0
         );
-        assert_eq!(
+    }
+
+    #[test]
+    fn test_vec_to_int_zero_negative() {
+         assert_eq!(
             vec_to_int(&vec!['0' as u8, '0' as u8, '0' as u8], true).unwrap(),
             0
-        );
-        assert_eq!(
-            vec_to_int(&vec!['0' as u8, '0' as u8, '0' as u8], true).unwrap(),
-            0
-        );
-        assert_eq!(vec_to_int(&vec![], true).unwrap(), 0);
+        ); //TODO -0 is illegal. Not sure if we care tho
+    }
+
+    #[test]
+    fn test_vec_to_int_empty() {
+           assert_eq!(vec_to_int(&vec![], true).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_vec_to_int_max_i64() {
         assert_eq!(
             vec_to_int(
                 &vec![
@@ -290,6 +318,10 @@ mod tests {
             ).unwrap(),
             9223372036854775807
         );
+    }
+
+    #[test]
+    fn test_vec_to_int_max_i64_and_one_overflow() {
         assert!(
             vec_to_int(
                 &vec![
@@ -316,6 +348,10 @@ mod tests {
                 false,
             ).is_err()
         );
+    }
+
+    #[test]
+    fn test_vec_to_int_min_i64() {
         assert_eq!(
             vec_to_int(
                 &vec![
@@ -343,6 +379,10 @@ mod tests {
             ).unwrap(),
             -9223372036854775808
         );
+    }
+
+    #[test]
+    fn test_vec_to_int_min_i64_and_minus_one_underflow() {
         assert!(
             vec_to_int(
                 &vec![
