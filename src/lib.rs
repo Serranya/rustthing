@@ -149,6 +149,14 @@ fn parse_list(iter: &mut Iterator<Item = io::Result<u8>>) -> io::Result<Vec<Benc
     return Ok(ret);
 }
 
+/// Parses an bencode integer value. The format is
+/// i<integer encoded in base ten ASCII>e we allowe some integers that are
+/// forbidden by the specification. for example
+///
+/// i-0e // -0 is forbidden
+/// i0123e // leading zeroes are forbidden (except i0e)
+///
+/// while the size of an integer is not stated in the spec we support up to 64 bytes
 fn parse_int(iter: &mut Iterator<Item = io::Result<u8>>) -> io::Result<i64> {
     let max_digits = 19;
 
@@ -212,10 +220,15 @@ fn vec_to_int(vec: &Vec<u8>, is_negative: bool) -> io::Result<i64> {
         } else {
             return Err(Error::new(
                 ErrorKind::InvalidData,
-                "Integer field is larger than i64",
+                "Integer field is longer i64",
             ));
         }
-        if let Some(i) = ret.checked_add(*val as i64 - 0x30) {
+        if let Some(i) = if is_negative {
+            ret.checked_sub(*val as i64 - 0x30)
+        } else {
+            ret.checked_add(*val as i64 - 0x30)
+        }
+        {
             ret = i;
         } else {
             return Err(Error::new(
@@ -223,10 +236,6 @@ fn vec_to_int(vec: &Vec<u8>, is_negative: bool) -> io::Result<i64> {
                 "Integer field is larger than i64",
             ));
         }
-    }
-
-    if is_negative {
-        ret *= -1; // Negative is +1 bigger than positive. Therefor this can't overflow
     }
 
     Ok(ret)
@@ -246,7 +255,7 @@ mod tests {
 
     #[test]
     fn test_vec_to_int_negative() {
-         assert_eq!(
+        assert_eq!(
             vec_to_int(&vec!['1' as u8, '2' as u8, '3' as u8], true).unwrap(),
             -123
         );
@@ -278,15 +287,15 @@ mod tests {
 
     #[test]
     fn test_vec_to_int_zero_negative() {
-         assert_eq!(
+        assert_eq!(
             vec_to_int(&vec!['0' as u8, '0' as u8, '0' as u8], true).unwrap(),
-            0
-        ); //TODO -0 is illegal. Not sure if we care tho
+            -0
+        );
     }
 
     #[test]
     fn test_vec_to_int_empty() {
-           assert_eq!(vec_to_int(&vec![], true).unwrap(), 0);
+        assert_eq!(vec_to_int(&vec![], true).unwrap(), 0);
     }
 
     #[test]
@@ -409,5 +418,77 @@ mod tests {
                 true,
             ).is_err()
         );
+    }
+
+    #[test]
+    fn test_parse_int_positive() {
+        let mut val = String::from("i123e").into_bytes().into_iter().map(|byte| Ok(byte));
+        assert_eq!(parse_int(&mut val).unwrap(), 123);
+    }
+
+    #[test]
+    fn test_parse_int_negative() {
+        let mut val = String::from("i-123e").into_bytes().into_iter().map(|byte| Ok(byte));
+        assert_eq!(parse_int(&mut val).unwrap(), -123);
+    }
+
+    #[test]
+    fn test_parse_int_zero_prefix_positive() {
+        // leading zeroes are illegal according to the spec. Not sure if we should care
+        // but since we don't error out make sure the result is at least "correct"
+        let mut val = String::from("i0123e").into_bytes().into_iter().map(|byte| Ok(byte));
+        assert_eq!(parse_int(&mut val).unwrap(), 123);
+    }
+
+    #[test]
+    fn test_parse_int_zero_prefix_negative() {
+        // leading zeroes are illegal according to the spec. Not sure if we should care
+        // but since we don't error out make sure the result is at least "correct"
+        let mut val = String::from("i-0123e").into_bytes().into_iter().map(|byte| Ok(byte));
+        assert_eq!(parse_int(&mut val).unwrap(), -123);
+    }
+
+    #[test]
+    fn test_parse_int_zero_positive() {
+        let mut val = String::from("i0e").into_bytes().into_iter().map(|byte| Ok(byte));
+        assert_eq!(parse_int(&mut val).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_parse_int_zero_negative() {
+        // negative zero is illegal according to the spec. Not sure if we should care
+        // but since we don't error out make sure the result is at least "correct"
+        let mut val = String::from("i-0e").into_bytes().into_iter().map(|byte| Ok(byte));
+        assert_eq!(parse_int(&mut val).unwrap(), -0);
+        let mut val = String::from("i-0e").into_bytes().into_iter().map(|byte| Ok(byte));
+        assert_eq!(parse_int(&mut val).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_parse_int_empty() {
+        // not sure if this is legal. The spec says that integers have no size limitation whatever
+        // that means regarding to empty integers. Treating them as 0 seems sensible.
+        let mut val = String::from("ie").into_bytes().into_iter().map(|byte| {
+            return Ok(byte);
+        });
+        assert_eq!(parse_int(&mut val).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_parse_int_double_start() {
+        let mut val = String::from("ii123e").into_bytes().into_iter().map(|byte| Ok(byte));
+        assert!(parse_int(&mut val).is_err());
+    }
+
+    #[test]
+    fn test_parse_int_invalid_digit() {
+        let mut val = String::from("i12x3e").into_bytes().into_iter().map(|byte| Ok(byte));
+        assert!(parse_int(&mut val).is_err());
+    }
+
+    #[test]
+    fn test_parse_int_missing_end() {
+        let mut val = String::from("i123").into_bytes().into_iter().map(|byte| Ok(byte));
+        assert!(parse_int(&mut val).is_err());
     }
 }
