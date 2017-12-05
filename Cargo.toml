@@ -2,3 +2,6 @@
 name = "bencode"
 version = "0.1.0"
 authors = ["Peter Lamby <peterlamby@web.de>"]
+
+[profile.release]
+lto = true
