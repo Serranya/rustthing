@@ -121,6 +121,10 @@ fn parse_dict(
     return Ok(ret);
 }
 
+/// Parses an bencode list. The format is l<bencoded values>e for example
+///
+/// l4:spam4:eggse represents the list of two strings: [ "spam", "eggs" ]
+/// le represents an empty list: []
 fn parse_list(iter: &mut Iterator<Item = io::Result<u8>>) -> io::Result<Vec<BencodeValue>> {
     let mut iter = iter.peekable();
     iter.next(); // we don't need the "start of list" indicator
@@ -490,5 +494,11 @@ mod tests {
     fn test_parse_int_missing_end() {
         let mut val = String::from("i123").into_bytes().into_iter().map(|byte| Ok(byte));
         assert!(parse_int(&mut val).is_err());
+    }
+
+    #[test]
+    fn test_parse_list_empty() {
+        let mut val = String::from("le").into_bytes().into_iter().map(|byte| Ok(byte));
+        assert_eq!(parse_list(&mut val).unwrap(), BencodeValue::Integer(3));
     }
 }
