@@ -160,7 +160,7 @@ fn parse_list(iter: &mut Iterator<Item = io::Result<u8>>) -> io::Result<Vec<Benc
 /// i-0e // -0 is forbidden
 /// i0123e // leading zeroes are forbidden (except i0e)
 ///
-/// while the size of an integer is not stated in the spec we support up to 64 bytes
+/// while the size of an integer is not stated in the spec we support up to 64 bits
 fn parse_int(iter: &mut Iterator<Item = io::Result<u8>>) -> io::Result<i64> {
     let max_digits = 19;
 
