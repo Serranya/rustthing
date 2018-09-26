@@ -15,49 +15,44 @@ pub enum BencodeValue {
 pub fn parse_value(iter: &mut Iterator<Item = io::Result<u8>>) -> io::Result<BencodeValue> {
 	let mut iter = iter.peekable();
 
-	loop {
-		let byte;
-		match iter.peek() {
-			Some(result) => match *result {
-				Ok(val) => {
-					byte = val;
-				}
+	let byte;
+	{
+		let preview = iter.peek();
+		if preview.is_none() {
+			return Ok(BencodeValue::EndOfFile);
+		} else {
+			byte = match preview.unwrap() {
+				Ok(val) => *val,
 				Err(ref err) => {
 					println!("Error while reading file {}", err);
-					return Err(Error::new(ErrorKind::Other, "Error while reading file"));
+					return Err(Error::new(err.kind(), "Error while reading file"));
 				}
-			},
-			_ => break,
-		}
-
-		match byte {
-			0x30...0x39 => return Ok(BencodeValue::String(parse_string(&mut iter)?)),
-			0x64 => return Ok(BencodeValue::Dictionary(parse_dict(&mut iter)?)),
-			0x69 => return Ok(BencodeValue::Integer(parse_int(&mut iter)?)),
-			0x6c => return Ok(BencodeValue::List(parse_list(&mut iter)?)),
-			val => {
-				return Err(Error::new(
-					ErrorKind::InvalidData,
-					format!("Unexpected byte {}", val),
-				))
-			}
+			};
 		}
 	}
-
-	return Ok(BencodeValue::EndOfFile);
+	match byte {
+		b'0'...b'9' => Ok(BencodeValue::String(parse_string(&mut iter)?)),
+		b'd' => Ok(BencodeValue::Dictionary(parse_dict(&mut iter)?)),
+		b'i' => Ok(BencodeValue::Integer(parse_int(&mut iter)?)),
+		b'l' => Ok(BencodeValue::List(parse_list(&mut iter)?)),
+		val => Err(Error::new(
+			ErrorKind::InvalidData,
+			format!("Unexpected byte {}", val),
+		)),
+	}
 }
 
 fn parse_string(iter: &mut Iterator<Item = io::Result<u8>>) -> io::Result<Vec<u8>> {
-	let mut ret = Vec::new();
+	let mut length = Vec::new();
 
 	loop {
-		let curr_byte = iter.next().ok_or(Error::new(
+		let curr_byte = iter.next().ok_or_else(|| Error::new(
 			ErrorKind::InvalidData,
 			"File ended while reading string",
 		))??;
-		if curr_byte >= 0x30 && curr_byte <= 0x39 {
-			ret.push(curr_byte);
-		} else if curr_byte == 0x3a {
+		if curr_byte >= b'0' && curr_byte <= b'9' {
+			length.push(curr_byte);
+		} else if curr_byte == b':' {
 			break;
 		} else {
 			return Err(Error::new(
@@ -67,18 +62,18 @@ fn parse_string(iter: &mut Iterator<Item = io::Result<u8>>) -> io::Result<Vec<u8
 		}
 	}
 
-	let length = vec_to_int(&ret, false)?;
+	let length = slice_to_int(&length, false)?;
 	let mut ret = Vec::with_capacity(length as usize); //TODO fix potential overflow
 
 	for _ in 0..length {
-		let curr_byte = iter.next().ok_or(Error::new(
+		let curr_byte = iter.next().ok_or_else(|| Error::new(
 			ErrorKind::InvalidData,
 			"File ended while reading string.",
 		))??;
 		ret.push(curr_byte);
 	}
 
-	return Ok(ret);
+	Ok(ret)
 }
 
 fn parse_dict(
@@ -96,7 +91,7 @@ fn parse_dict(
 		//println!("Adding k:{:?} v:{:?} to dictionary", key, value);
 		ret.insert(key, value);
 
-		let test = iter.peek().ok_or(Error::new(
+		let test = iter.peek().ok_or_else(|| Error::new(
 			ErrorKind::InvalidData,
 			"File ended while reading dictionary",
 		))?;
@@ -113,7 +108,7 @@ fn parse_dict(
 		}
 	}
 
-	return Ok(ret);
+	Ok(ret)
 }
 
 /// Parses an bencode list. The format is l<bencoded values>e for example
@@ -124,8 +119,9 @@ fn parse_list(iter: &mut Iterator<Item = io::Result<u8>>) -> io::Result<Vec<Benc
 	let mut iter = iter.peekable();
 	iter.next(); // we don't need the "start of list" indicator
 
-	if let Some(Ok(0x65)) = iter.peek() { // empty list
-		return Ok(Vec::new()) // TODO use empty vec
+	if let Some(Ok(0x65)) = iter.peek() {
+		// empty list
+		return Ok(Vec::new());
 	}
 
 	let mut ret = Vec::new();
@@ -135,7 +131,7 @@ fn parse_list(iter: &mut Iterator<Item = io::Result<u8>>) -> io::Result<Vec<Benc
 		//println!("Adding {:?} to list", val);
 		ret.push(val);
 
-		let test = iter.peek().ok_or(Error::new(
+		let test = iter.peek().ok_or_else(|| Error::new(
 			ErrorKind::InvalidData,
 			"File ended while reading list",
 		))?;
@@ -149,7 +145,7 @@ fn parse_list(iter: &mut Iterator<Item = io::Result<u8>>) -> io::Result<Vec<Benc
 		}
 	}
 
-	return Ok(ret);
+	Ok(ret)
 }
 
 /// Parses an bencode integer value. The format is
@@ -168,14 +164,14 @@ fn parse_int(iter: &mut Iterator<Item = io::Result<u8>>) -> io::Result<i64> {
 	let mut is_negative = false;
 	let mut curr_byte;
 
-	curr_byte = iter.next().ok_or(Error::new(
+	curr_byte = iter.next().ok_or_else(|| Error::new(
 		ErrorKind::InvalidData,
 		"File ended while reading integer.",
 	))??;
 
 	if curr_byte == 0x2d {
 		is_negative = true;
-		curr_byte = iter.next().ok_or(Error::new(
+		curr_byte = iter.next().ok_or_else(|| Error::new(
 			ErrorKind::InvalidData,
 			"File ended while reading integer.",
 		))??;
@@ -200,18 +196,18 @@ fn parse_int(iter: &mut Iterator<Item = io::Result<u8>>) -> io::Result<i64> {
 				format!("Expected an integer (byte 0x30 - 0x39) got {:x}", curr_byte),
 			));
 		}
-		curr_byte = iter.next().ok_or(Error::new(
+		curr_byte = iter.next().ok_or_else(|| Error::new(
 			ErrorKind::InvalidData,
 			"File ended while reading integer.",
 		))??;
 	}
 
-	return Ok(vec_to_int(&int_chars, is_negative)?);
+	Ok(slice_to_int(&int_chars, is_negative)?)
 }
 
 /// Parses the number given as ASCII in vec to an i64. Does not support
-/// a sign. The sign must be passed via the is_negative parameter.
-fn vec_to_int(vec: &Vec<u8>, is_negative: bool) -> io::Result<i64> {
+/// a sign. The sign must be passed via the *is_negative* parameter.
+fn slice_to_int(vec: &[u8], is_negative: bool) -> io::Result<i64> {
 	let mut ret: i64 = 0;
 
 	for val in vec {
@@ -224,9 +220,9 @@ fn vec_to_int(vec: &Vec<u8>, is_negative: bool) -> io::Result<i64> {
 			));
 		}
 		if let Some(i) = if is_negative {
-			ret.checked_sub(*val as i64 - 0x30)
+			ret.checked_sub(i64::from(*val) - 0x30)
 		} else {
-			ret.checked_add(*val as i64 - 0x30)
+			ret.checked_add(i64::from(*val) as i64 - 0x30)
 		} {
 			ret = i;
 		} else {
@@ -247,7 +243,7 @@ mod tests {
 	#[test]
 	fn test_vec_to_int_positive() {
 		assert_eq!(
-			vec_to_int(&vec!['1' as u8, '2' as u8, '3' as u8], false).unwrap(),
+			slice_to_int(&vec!['1' as u8, '2' as u8, '3' as u8], false).unwrap(),
 			123
 		);
 	}
@@ -255,7 +251,7 @@ mod tests {
 	#[test]
 	fn test_vec_to_int_negative() {
 		assert_eq!(
-			vec_to_int(&vec!['1' as u8, '2' as u8, '3' as u8], true).unwrap(),
+			slice_to_int(&vec!['1' as u8, '2' as u8, '3' as u8], true).unwrap(),
 			-123
 		);
 	}
@@ -263,7 +259,7 @@ mod tests {
 	#[test]
 	fn test_vec_to_int_zero_prefix_positive() {
 		assert_eq!(
-			vec_to_int(&vec!['0' as u8, '2' as u8, '3' as u8], false).unwrap(),
+			slice_to_int(&vec!['0' as u8, '2' as u8, '3' as u8], false).unwrap(),
 			23
 		);
 	}
@@ -271,7 +267,7 @@ mod tests {
 	#[test]
 	fn test_vec_to_int_zero_prefix_negative() {
 		assert_eq!(
-			vec_to_int(&vec!['0' as u8, '2' as u8, '3' as u8], true).unwrap(),
+			slice_to_int(&vec!['0' as u8, '2' as u8, '3' as u8], true).unwrap(),
 			-23
 		);
 	}
@@ -279,7 +275,7 @@ mod tests {
 	#[test]
 	fn test_vec_to_int_zero_positive() {
 		assert_eq!(
-			vec_to_int(&vec!['0' as u8, '0' as u8, '0' as u8], false).unwrap(),
+			slice_to_int(&vec!['0' as u8, '0' as u8, '0' as u8], false).unwrap(),
 			0
 		);
 	}
@@ -287,20 +283,20 @@ mod tests {
 	#[test]
 	fn test_vec_to_int_zero_negative() {
 		assert_eq!(
-			vec_to_int(&vec!['0' as u8, '0' as u8, '0' as u8], true).unwrap(),
+			slice_to_int(&vec!['0' as u8, '0' as u8, '0' as u8], true).unwrap(),
 			-0
 		);
 	}
 
 	#[test]
 	fn test_vec_to_int_empty() {
-		assert_eq!(vec_to_int(&vec![], true).unwrap(), 0);
+		assert_eq!(slice_to_int(&vec![], true).unwrap(), 0);
 	}
 
 	#[test]
 	fn test_vec_to_int_max_i64() {
 		assert_eq!(
-			vec_to_int(
+			slice_to_int(
 				&vec![
 					'9' as u8, '2' as u8, '2' as u8, '3' as u8, '3' as u8, '7' as u8, '2' as u8,
 					'0' as u8, '3' as u8, '6' as u8, '8' as u8, '5' as u8, '4' as u8, '7' as u8,
@@ -308,14 +304,14 @@ mod tests {
 				],
 				false,
 			).unwrap(),
-			9223372036854775807
+			9_223_372_036_854_775_807
 		);
 	}
 
 	#[test]
 	fn test_vec_to_int_max_i64_and_one_overflow() {
 		assert!(
-			vec_to_int(
+			slice_to_int(
 				&vec![
 					'9' as u8, '2' as u8, '2' as u8, '3' as u8, '3' as u8, '7' as u8, '2' as u8,
 					'0' as u8, '3' as u8, '6' as u8, '8' as u8, '5' as u8, '4' as u8, '7' as u8,
@@ -329,7 +325,7 @@ mod tests {
 	#[test]
 	fn test_vec_to_int_min_i64() {
 		assert_eq!(
-			vec_to_int(
+			slice_to_int(
 				&vec![
 					'9' as u8, '2' as u8, '2' as u8, '3' as u8, '3' as u8, '7' as u8, '2' as u8,
 					'0' as u8, '3' as u8, '6' as u8, '8' as u8, '5' as u8, '4' as u8, '7' as u8,
@@ -337,14 +333,14 @@ mod tests {
 				],
 				true,
 			).unwrap(),
-			-9223372036854775808
+			-9_223_372_036_854_775_808
 		);
 	}
 
 	#[test]
 	fn test_vec_to_int_min_i64_and_minus_one_underflow() {
 		assert!(
-			vec_to_int(
+			slice_to_int(
 				&vec![
 					'9' as u8, '2' as u8, '2' as u8, '3' as u8, '3' as u8, '7' as u8, '2' as u8,
 					'0' as u8, '3' as u8, '6' as u8, '8' as u8, '5' as u8, '4' as u8, '7' as u8,
@@ -425,7 +421,7 @@ mod tests {
 		// not sure if this is legal. The spec says that integers have no size limitation whatever
 		// that means regarding to empty integers. Treating them as 0 seems sensible.
 		let mut val = String::from("ie").into_bytes().into_iter().map(|byte| {
-			return Ok(byte);
+			Ok(byte)
 		});
 		assert_eq!(parse_int(&mut val).unwrap(), 0);
 	}
